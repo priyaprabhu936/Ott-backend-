@@ -1,26 +1,22 @@
 import express from "express";
 import mongoose from "mongoose";
-import cors from "cors";
 import dotenv from "dotenv";
+import cors from "cors";
 
+// Load environment variables
 dotenv.config();
 
 const app = express();
-
-// Middleware
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-// MongoDB Connect
+// MongoDB Connection
 mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ MongoDB Error:", err));
+  .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// Schema & Model
+// Movie Schema
 const movieSchema = new mongoose.Schema({
   title: String,
   description: String,
@@ -31,7 +27,7 @@ const Movie = mongoose.model("Movie", movieSchema);
 
 // Root Route
 app.get("/", (req, res) => {
-  res.send("✅ Backend is working!");
+  res.send("🎉 Backend running successfully!");
 });
 
 // Get All Movies
@@ -47,11 +43,11 @@ app.get("/api/movies", async (req, res) => {
 // Add Movie
 app.post("/api/movies", async (req, res) => {
   try {
-    const newMovie = new Movie(req.body);
-    await newMovie.save();
-    res.status(201).json(newMovie);
+    const movie = new Movie(req.body);
+    await movie.save();
+    res.json(movie);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -65,9 +61,6 @@ app.delete("/api/movies/:id", async (req, res) => {
   }
 });
 
-// PORT
+// Start Server
 const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
