@@ -6,55 +6,51 @@ import cors from "cors";
 dotenv.config();
 
 const app = express();
-
-// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// MongoDB Connection
-mongoose
-  .connect(process.env.MONGO_URI, {
-    // இவங்க warnings avoid பண்ணலாம் (useNewUrlParser etc. தேவையில்லை new driverக்கு)
-  })
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+// ✅ MongoDB connect
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.log("❌ Mongo Error:", err));
 
-// Simple Model Example (Movie)
+// ✅ Movie Schema & Model
 const movieSchema = new mongoose.Schema({
   title: String,
+  description: String,
   year: Number,
+  poster: String,
 });
 
 const Movie = mongoose.model("Movie", movieSchema);
 
-// Root Route
-app.get("/", (req, res) => {
-  res.send("🚀 Backend is running successfully!");
-});
-
+// ✅ API Routes
 // Get all movies
-app.get("/movies", async (req, res) => {
-  try {
-    const movies = await Movie.find();
-    res.json(movies);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get("/api/movies", async (req, res) => {
+  const movies = await Movie.find();
+  res.json(movies);
 });
 
 // Add a movie
-app.post("/movies", async (req, res) => {
-  try {
-    const newMovie = new Movie(req.body);
-    await newMovie.save();
-    res.status(201).json(newMovie);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+app.post("/api/movies", async (req, res) => {
+  const newMovie = new Movie(req.body);
+  await newMovie.save();
+  res.json(newMovie);
 });
 
-// Start Server
+// Delete a movie
+app.delete("/api/movies/:id", async (req, res) => {
+  await Movie.findByIdAndDelete(req.params.id);
+  res.json({ message: "Movie deleted" });
+});
+
+// ✅ Root Route (Important for Render)
+app.get("/", (req, res) => {
+  res.send("🎬 Backend is working! 🚀");
+});
+
+// ✅ Server Listen
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
