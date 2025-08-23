@@ -1,29 +1,57 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import cors from "cors";
 
 dotenv.config();
 
 const app = express();
-app.use(express.json());
-
-// ✅ Render auto-assign pannura PORT use pannunga
 const PORT = process.env.PORT || 5000;
 
-// ✅ MongoDB connect
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log("✅ MongoDB Connected"))
-.catch((err) => console.error("❌ MongoDB Error:", err));
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// ✅ Default Route
-app.get("/", (req, res) => {
-  res.send("Backend is running 🚀");
+// MongoDB connect
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
+
+// Movie schema
+const movieSchema = new mongoose.Schema({
+  title: String,
+  description: String,
+  poster: String,
 });
 
-// ✅ Start Server
+const Movie = mongoose.model("Movie", movieSchema);
+
+// Routes
+app.get("/", (req, res) => {
+  res.send("🚀 Backend running successfully!");
+});
+
+app.get("/api/movies", async (req, res) => {
+  const movies = await Movie.find();
+  res.json(movies);
+});
+
+app.post("/api/movies", async (req, res) => {
+  const movie = new Movie(req.body);
+  await movie.save();
+  res.json(movie);
+});
+
+app.delete("/api/movies/:id", async (req, res) => {
+  await Movie.findByIdAndDelete(req.params.id);
+  res.json({ message: "Movie deleted" });
+});
+
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
