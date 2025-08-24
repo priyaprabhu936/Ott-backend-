@@ -16,139 +16,92 @@ app.use(express.json());
 
 // MongoDB connect
 mongoose
-  .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ===== User Model (hashing + methods) =====
-const userSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    password: { type: String, required: true, minlength: 6, select: false },
-    isAdmin: { type: Boolean, default: false },
-  },
-  { timestamps: true }
-);
-
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
-});
-
-userSchema.methods.comparePassword = function (plain) {
-  return bcrypt.compare(plain, this.password);
-};
-
-const User = mongoose.model("User", userSchema);
-
-// ===== Movie Model =====
+// Movie schema
 const movieSchema = new mongoose.Schema({
-  title: { type: String, required: true },
+  title: String,
   description: String,
   poster: String,
-  rating: { type: Number, min: 1, max: 5, default: 3 },
-  category: { type: String, default: "General" },
 });
 const Movie = mongoose.model("Movie", movieSchema);
 
-// ===== Auth helpers =====
-const signToken = (payload) =>
-  jwt.sign(payload, process.env.JWT_SECRET || "devsecret", { expiresIn: "7d" });
+// User schema
+const userSchema = new mongoose.Schema({
+  email: { type: String, unique: true },
+  password: String,
+});
+const User = mongoose.model("User", userSchema);
 
-const auth = (req, _res, next) => {
-  const hdr = req.headers.authorization || "";
-  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
-  if (!token) return next({ status: 401, message: "No token" });
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "devsecret");
-    req.user = payload; // { id, isAdmin }
+// 🔐 Middleware - Token verify
+const authMiddleware = (req, res, next) => {
+  const token = req.headers["authorization"];
+  if (!token) return res.status(401).json({ message: "No token provided" });
+
+  jwt.verify(token.split(" ")[1], process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(403).json({ message: "Invalid token" });
+    req.user = decoded;
     next();
-  } catch (e) {
-    next({ status: 401, message: "Invalid token" });
-  }
+  });
 };
 
-const adminOnly = (req, _res, next) => {
-  if (!req.user?.isAdmin) return next({ status: 403, message: "Admin only" });
-  next();
-};
+// ✅ Routes
+app.get("/", (req, res) => {
+  res.send("🚀 Backend running successfully with JWT Auth!");
+});
 
-// ===== Routes =====
-app.get("/", (_req, res) => res.send("🚀 Backend running successfully!"));
-
-// Auth
-app.post("/api/auth/register", async (req, res) => {
+// User Register
+app.post("/api/register", async (req, res) => {
+  const { email, password } = req.body;
+  const hashedPassword = await bcrypt.hash(password, 10);
   try {
-    const { name, email, password } = req.body || {};
-    if (!name || !email || !password) return res.status(400).json({ message: "All fields required" });
-    const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ message: "Email already registered" });
-
-    const isFirst = (await User.countDocuments()) === 0; // first user becomes admin
-    const user = await User.create({ name, email, password, isAdmin: isFirst });
-
-    const token = signToken({ id: user._id, isAdmin: user.isAdmin });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin } });
-  } catch (e) {
-    res.status(500).json({ message: "Register failed", error: e.message });
+    const newUser = new User({ email, password: hashedPassword });
+    await newUser.save();
+    res.json({ message: "User registered successfully" });
+  } catch (err) {
+    res.status(400).json({ message: "User already exists" });
   }
 });
 
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body || {};
-    const user = await User.findOne({ email }).select("+password");
-    if (!user) return res.status(400).json({ message: "Invalid email or password" });
-    const ok = await user.comparePassword(password);
-    if (!ok) return res.status(400).json({ message: "Invalid email or password" });
+// User Login
+app.post("/api/login", async (req, res) => {
+  const { email, password } = req.body;
+  const user = await User.findOne({ email });
+  if (!user) return res.status(400).json({ message: "User not found" });
 
-    const token = signToken({ id: user._id, isAdmin: user.isAdmin });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin } });
-  } catch (e) {
-    res.status(500).json({ message: "Login failed", error: e.message });
-  }
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
+
+  res.json({ token });
 });
 
-// Movies
-app.get("/api/movies", async (_req, res) => {
-  const movies = await Movie.find().sort({ _id: -1 });
+// Protected Routes
+app.get("/api/movies", async (req, res) => {
+  const movies = await Movie.find();
   res.json(movies);
 });
 
-app.post("/api/movies", auth, adminOnly, async (req, res) => {
-  const { title, description, poster, rating, category } = req.body;
-  const movie = await Movie.create({
-    title,
-    description,
-    poster,
-    rating: Number(rating) || 3,
-    category: category || "General",
-  });
+app.post("/api/movies", authMiddleware, async (req, res) => {
+  const movie = new Movie(req.body);
+  await movie.save();
   res.json(movie);
 });
 
-app.put("/api/movies/:id", auth, adminOnly, async (req, res) => {
-  const { title, description, poster, rating, category } = req.body;
-  const movie = await Movie.findByIdAndUpdate(
-    req.params.id,
-    { title, description, poster, rating: Number(rating) || 3, category: category || "General" },
-    { new: true }
-  );
-  res.json(movie);
-});
-
-app.delete("/api/movies/:id", auth, adminOnly, async (req, res) => {
+app.delete("/api/movies/:id", authMiddleware, async (req, res) => {
   await Movie.findByIdAndDelete(req.params.id);
   res.json({ message: "Movie deleted" });
 });
 
-// Error handler
-app.use((err, _req, res, _next) => {
-  res.status(err.status || 500).json({ message: err.message || "Server error" });
+// Start server
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
-
-// Start
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
