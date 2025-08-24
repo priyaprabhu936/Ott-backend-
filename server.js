@@ -14,24 +14,23 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Mongo connect
+// MongoDB connect
 mongoose
   .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ================== User Model (with hashing) ==================
+// ===== User Model (hashing + methods) =====
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    password: { type: String, required: true, minlength: 6, select: false }, // hidden by default
+    password: { type: String, required: true, minlength: 6, select: false },
     isAdmin: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-// Hash password BEFORE save if modified
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
@@ -39,14 +38,13 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// Instance method to verify password
-userSchema.methods.comparePassword = async function (plain) {
+userSchema.methods.comparePassword = function (plain) {
   return bcrypt.compare(plain, this.password);
 };
 
 const User = mongoose.model("User", userSchema);
 
-// ================== Movie Model ==================
+// ===== Movie Model =====
 const movieSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
@@ -56,7 +54,7 @@ const movieSchema = new mongoose.Schema({
 });
 const Movie = mongoose.model("Movie", movieSchema);
 
-// ================== Auth Helpers ==================
+// ===== Auth helpers =====
 const signToken = (payload) =>
   jwt.sign(payload, process.env.JWT_SECRET || "devsecret", { expiresIn: "7d" });
 
@@ -78,26 +76,22 @@ const adminOnly = (req, _res, next) => {
   next();
 };
 
-// ================== Routes ==================
+// ===== Routes =====
 app.get("/", (_req, res) => res.send("🚀 Backend running successfully!"));
 
-// ---- Auth ----
+// Auth
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
     if (!name || !email || !password) return res.status(400).json({ message: "All fields required" });
-
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ message: "Email already registered" });
 
-    const isFirstUser = (await User.countDocuments()) === 0; // first user becomes admin
-    const user = await User.create({ name, email, password, isAdmin: isFirstUser }); // pre('save') will hash
+    const isFirst = (await User.countDocuments()) === 0; // first user becomes admin
+    const user = await User.create({ name, email, password, isAdmin: isFirst });
 
     const token = signToken({ id: user._id, isAdmin: user.isAdmin });
-    res.json({
-      token,
-      user: { id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin },
-    });
+    res.json({ token, user: { id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin } });
   } catch (e) {
     res.status(500).json({ message: "Register failed", error: e.message });
   }
@@ -106,23 +100,19 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    const user = await User.findOne({ email }).select("+password"); // include password explicitly
+    const user = await User.findOne({ email }).select("+password");
     if (!user) return res.status(400).json({ message: "Invalid email or password" });
-
     const ok = await user.comparePassword(password);
     if (!ok) return res.status(400).json({ message: "Invalid email or password" });
 
     const token = signToken({ id: user._id, isAdmin: user.isAdmin });
-    res.json({
-      token,
-      user: { id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin },
-    });
+    res.json({ token, user: { id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin } });
   } catch (e) {
     res.status(500).json({ message: "Login failed", error: e.message });
   }
 });
 
-// ---- Movies ----
+// Movies
 app.get("/api/movies", async (_req, res) => {
   const movies = await Movie.find().sort({ _id: -1 });
   res.json(movies);
@@ -155,10 +145,9 @@ app.delete("/api/movies/:id", auth, adminOnly, async (req, res) => {
   res.json({ message: "Movie deleted" });
 });
 
-// ---- Error handler ----
+// Error handler
 app.use((err, _req, res, _next) => {
-  const status = err.status || 500;
-  res.status(status).json({ message: err.message || "Server error" });
+  res.status(err.status || 500).json({ message: err.message || "Server error" });
 });
 
 // Start
