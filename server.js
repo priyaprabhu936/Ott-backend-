@@ -1,38 +1,37 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const cors = require("cors");
+const dotenv = require("dotenv");
+
+dotenv.config();
 
 const app = express();
-app.use(cors());
+
+// CORS (allow your Vercel domain; fallback to *)
+const allowedOrigin = process.env.CORS_ORIGIN || "*";
+app.use(cors({ origin: allowedOrigin, credentials: true }));
+
 app.use(express.json());
 
-// Sample movies data
-let movies = [
-  {
-    id: 1,
-    title: "Vikram",
-    posterUrl: "https://m.media-amazon.com/images/I/81p+xe8cbnL._AC_SY679_.jpg"
-  },
-  {
-    id: 2,
-    title: "Leo",
-    posterUrl: "https://m.media-amazon.com/images/I/91VYt6lI8nL._AC_SY741_.jpg"
-  },
-  {
-    id: 3,
-    title: "Jawan",
-    posterUrl: "https://m.media-amazon.com/images/I/81m1s4wIPML._AC_SY679_.jpg"
-  },
-  {
-    id: 4,
-    title: "KGF 2",
-    posterUrl: "https://m.media-amazon.com/images/I/91V6f+JQJ8L._AC_SY679_.jpg"
-  }
-];
+// MongoDB
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("❌ Missing MONGO_URI in environment");
+  process.exit(1);
+}
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => {
+    console.error("❌ MongoDB error:", err.message);
+    process.exit(1);
+  });
 
-// API route
-app.get("/api/movies", (req, res) => {
-  res.json(movies);
-});
+// Routes
+app.get("/", (req, res) => res.send("🚀 OTT Backend up"));
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/movies", require("./routes/movieRoutes"));
 
-const PORT = 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Start
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`✅ Server running on ${PORT}`));
